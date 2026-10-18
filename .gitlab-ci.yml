@@ -9,7 +9,7 @@ variables:
 
 .tofu_base:
   tags:
-    - image-builder # Targets your dedicated RHEL 9.8 VM Runner
+    - image-builder # Targets dedicated RHEL 9.8 VM Runner
   before_script:
     - sudo mkdir -p "${STATE_DIR}"
     - sudo chown -R gitlab-runner:gitlab-runner "${STATE_DIR}"
