@@ -3,13 +3,13 @@ terraform {
   required_providers {
     proxmox = {
       source  = "bpg/proxmox"
-      version = ">= 0.60.0" # Modern standard provider for Proxmox VE 8/9
+      version = ">= 0.60.0"
     }
   }
 }
 
 provider "proxmox" {
-  # Dynamically interpolates target hypervisor connection details
-  endpoint = "https://${var.pve_ip}:${var.pve_port}/"
-  insecure = true
+  endpoint  = var.pve_endpoint
+  api_token = "${var.pve_token_id}=${var.pve_token_secret}"
+  insecure  = true
 }

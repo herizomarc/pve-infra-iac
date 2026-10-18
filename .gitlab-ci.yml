@@ -4,8 +4,9 @@ stages:
 
 variables:
   TOFU_IMAGE: "ghcr.io/opentofu/opentofu:1.8.4"
-  # Shared state file path mapped directly to the runner's heavy partition
   STATE_DIR: "/var/lib/gitlab-runner/share/tofu-state"
+  # Secure host path inside the Runner's dedicated partition
+  SECURE_TFVARS: "/var/lib/gitlab-runner/secure-vars/production.tfvars"
 
 .tofu_base:
   tags:
@@ -13,12 +14,18 @@ variables:
   before_script:
     - sudo mkdir -p "${STATE_DIR}"
     - sudo chown -R gitlab-runner:gitlab-runner "${STATE_DIR}"
+    # Pre-flight check: ensure the secure credentials file exists locally on the host
+    - |
+      if [ ! -f "${SECURE_TFVARS}" ]; then
+        echo "CRITICAL ERROR: Local secure variables file ${SECURE_TFVARS} missing on Runner disk!"
+        exit 1
+      fi
 
 tofu_plan:
   stage: plan
   extends: .tofu_base
   script:
-    - 'echo "=== 1. INITIALIZING OPENTOFU IN EPHEMERAL CONTAINER ==="'
+    - 'echo "=== 1. INITIALIZING OPENTOFU ENVIRONMENT ==="'
     - |
       sudo podman run --rm \
         -v "${CI_PROJECT_DIR}":/workspace:z \
@@ -26,15 +33,14 @@ tofu_plan:
         -w /workspace \
         ${TOFU_IMAGE} init
 
-    - 'echo "=== 2. GENERATING INFRASTRUCTURE PLAN ==="'
-    # Corrected: BPG requires a single PM_API_TOKEN env var formatted as "TOKEN_ID=TOKEN_SECRET"
+    - 'echo "=== 2. GENERATING INFRASTRUCTURE PLAN VIA LOCAL TFVARS ==="'
+    # Mounts the runner's local file as the container's active terraform.tfvars sheet
     - |
       sudo podman run --rm \
         -v "${CI_PROJECT_DIR}":/workspace:z \
         -v "${STATE_DIR}":/workspace/.terraform:z \
+        -v "${SECURE_TFVARS}":/workspace/terraform.tfvars:z \
         -w /workspace \
-        -e PM_API_TOKEN="${PVE_TOKEN_ID}=${PVE_TOKEN_SECRET}" \
-        -e TF_VAR_ssh_public_key="${TF_VAR_ssh_public_key}" \
         ${TOFU_IMAGE} plan -out=tofu.plan
   artifacts:
     paths:
@@ -47,16 +53,15 @@ tofu_apply:
   dependencies:
     - tofu_plan
   script:
-    - 'echo "=== 3. APPLYING CHANGES TO PROXMOX VE CLUSTER ==="'
-    # Corrected: Applied the exact same unifed token syntax for the execution stage
+    - 'echo "=== 3. EXECUTING DEPLOYMENT TO PROXMOX VE CLUSTER ==="'
+    # The deploy stage maps the exact same host target to guarantee atomic state replication
     - |
       sudo podman run --rm \
         -v "${CI_PROJECT_DIR}":/workspace:z \
         -v "${STATE_DIR}":/workspace/.terraform:z \
+        -v "${SECURE_TFVARS}":/workspace/terraform.tfvars:z \
         -w /workspace \
-        -e PM_API_TOKEN="${PVE_TOKEN_ID}=${PVE_TOKEN_SECRET}" \
-        -e TF_VAR_ssh_public_key="${TF_VAR_ssh_public_key}" \
         ${TOFU_IMAGE} apply -auto-approve tofu.plan
   only:
     - main
-  when: manual # Safety trigger requiring explicit human approval in GitLab UI
+  when: manual # Human-in-the-loop validation gate requiring user approval in GitLab UI

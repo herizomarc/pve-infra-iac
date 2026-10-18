@@ -7,7 +7,7 @@ resource "proxmox_virtual_environment_vm" "openbao_server" {
   vm_id       = 100
   node_name   = "pve1"
 
-  # ➔ Link to your hardened CIS/ANSSI RHEL 9 Golden Image (ID 9000)
+  # ➔ Link to your hardened CIS/ANSSI RHEL 9 Golden Image Template (ID 9000)
   clone {
     vm_id = 9000
     full  = false # Linked clone architecture for lightning-fast deployments
@@ -35,7 +35,7 @@ resource "proxmox_virtual_environment_vm" "openbao_server" {
     size         = 20
   }
 
-  # SCSI 1: Isolated, dedicated data disk explicitly reserved for OpenBao chroot DB storage (/srv/openbao)
+  # SCSI 1: Isolated, dedicated data disk explicitly reserved for OpenBao Raft DB storage (/srv/openbao)
   disk {
     datastore_id = "local-lvm"
     interface    = "scsi1"
@@ -60,28 +60,7 @@ resource "proxmox_virtual_environment_vm" "openbao_server" {
 
     user_account {
       username = "secops" # Safe, localized non-root administrative account
-      keys     = [var.ssh_public_key] # Dynamically injected at runtime
+      keys     = [var.ssh_public_key] # Dynamically injected at runtime from tfvars
     }
   }
 }
-
-# =========================================================================
-# ☸️ FUTURE PLATFORM EXTENSIONS (KUBERNETES NODES INHERITING 9000 BLANK TEMPLATE)
-# =========================================================================
-# resource "proxmox_virtual_environment_vm" "k8s_master" {
-#   name        = "vm-k8s-master-01"
-#   vm_id       = 200
-#   node_name   = "pve1"
-#   clone {
-#     vm_id = 9000
-#     full  = false
-#   }
-#   cpu { cores = 4 }
-#   memory { dedicated = 4096 }
-#   agent { enabled = true }
-#   network_device { bridge = "vmbr0" }
-#   initialization {
-#     ip_config { ipv4 { address = "10.10.99.20/24", gateway = "10.10.99.1" } }
-#     user_account { username = "secops", keys = [var.ssh_public_key] }
-#   }
-# }

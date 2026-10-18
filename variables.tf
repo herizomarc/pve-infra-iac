@@ -1,17 +1,20 @@
-variable "pve_ip" {
+variable "pve_endpoint" {
   type        = string
-  description = "Target Proxmox VE node management IP address"
-  default     = "10.10.99.2"
+  description = "Target Proxmox VE REST API endpoint URL root (e.g., https://10.10.99)"
 }
 
-variable "pve_port" {
+variable "pve_token_id" {
   type        = string
-  description = "Network port assigned to the Proxmox REST API interface"
-  default     = "8006"
+  description = "Proxmox API Token ID allocation profile"
+}
+
+variable "pve_token_secret" {
+  type        = string
+  description = "Proxmox API Token Cryptographic Secret UUID"
+  sensitive   = true
 }
 
 variable "ssh_public_key" {
   type        = string
   description = "Permanent SecOps public SSH key injected into cloud-init for emergency DRP access"
-  # Declared empty to keep the codebase fully anonymous. GitLab CI fills this at runtime.
 }
