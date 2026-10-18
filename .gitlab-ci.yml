@@ -42,7 +42,7 @@ tofu_plan:
   artifacts:
     paths:
       - tofu.plan
-      - .terraform.lock.hcl # ◄ INCLUSION ESSENTIELLE : Partage le verrou des dépendances
+      - .terraform.lock.hcl # INCLUSION ESSENTIELLE : Partage le verrou des dépendances
     expire_in: 1 hour
 
 tofu_apply:
