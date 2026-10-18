@@ -1,0 +1,13 @@
+# Ignore local OpenTofu secrets
+*.tfvars
+*.tfvars.json
+
+# Ignore local execution states
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.lock.hcl
+
+# Ignore plans and logs
+*.plan
+*.log

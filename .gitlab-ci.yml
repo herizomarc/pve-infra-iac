@@ -1,0 +1,63 @@
+stages:
+  - plan
+  - apply
+
+variables:
+  TOFU_IMAGE: "ghcr.io/opentofu/opentofu:1.8.4"
+  # Shared state file path mapped directly to the runner's heavy partition
+  STATE_DIR: "/var/lib/gitlab-runner/share/tofu-state"
+
+.tofu_base:
+  tags:
+    - image-builder # Targets your dedicated RHEL 9.8 VM Runner
+  before_script:
+    - sudo mkdir -p "${STATE_DIR}"
+    - sudo chown -R gitlab-runner:gitlab-runner "${STATE_DIR}"
+
+tofu_plan:
+  stage: plan
+  extends: .tofu_base
+  script:
+    - 'echo "=== 1. INITIALIZING OPENTOFU IN EPHEMERAL CONTAINER ==="'
+    # Initializes OpenTofu environment inside a clean, ephemeral stateless container
+    - |
+      sudo podman run --rm \
+        -v "$PWD":/workspace \
+        -v "${STATE_DIR}":/workspace/.terraform \
+        -w /workspace \
+        ${TOFU_IMAGE} init
+
+    - 'echo "=== 2. GENERATING INFRASTRUCTURE PLAN ==="'
+    # Passes Proxmox tokens and the SSH key dynamically via environment injection
+    - |
+      sudo podman run --rm \
+        -v "$PWD":/workspace \
+        -v "${STATE_DIR}":/workspace/.terraform \
+        -w /workspace \
+        -e PM_API_TOKEN="${PVE_TOKEN_ID}=${PVE_TOKEN_SECRET}" \
+        -e TF_VAR_ssh_public_key="${TF_VAR_ssh_public_key}" \
+        ${TOFU_IMAGE} plan -out=tofu.plan
+  artifacts:
+    paths:
+      - tofu.plan
+    expire_in: 1 hour
+
+tofu_apply:
+  stage: apply
+  extends: .tofu_base
+  dependencies:
+    - tofu_plan
+  script:
+    - 'echo "=== 3. APPLYING CHANGES TO PROXMOX VE CLUSTER ==="'
+    # Deploys configurations to Proxmox via the authenticated container pipeline
+    - |
+      sudo podman run --rm \
+        -v "$PWD":/workspace \
+        -v "${STATE_DIR}":/workspace/.terraform \
+        -w /workspace \
+        -e PM_API_TOKEN="${PVE_TOKEN_ID}=${PVE_TOKEN_SECRET}" \
+        -e TF_VAR_ssh_public_key="${TF_VAR_ssh_public_key}" \
+        ${TOFU_IMAGE} apply -auto-approve tofu.plan
+  only:
+    - main
+  when: manual # Safety trigger requiring explicit human approval in GitLab UI
