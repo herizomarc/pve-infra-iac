@@ -19,20 +19,19 @@ tofu_plan:
   extends: .tofu_base
   script:
     - 'echo "=== 1. INITIALIZING OPENTOFU IN EPHEMERAL CONTAINER ==="'
-    # Initializes OpenTofu environment inside a clean, ephemeral stateless container
+    # Added :z flag to fix SELinux permissions and replaced $PWD with ${CI_PROJECT_DIR}
     - |
       sudo podman run --rm \
-        -v "$PWD":/workspace \
-        -v "${STATE_DIR}":/workspace/.terraform \
+        -v "${CI_PROJECT_DIR}":/workspace:z \
+        -v "${STATE_DIR}":/workspace/.terraform:z \
         -w /workspace \
         ${TOFU_IMAGE} init
 
     - 'echo "=== 2. GENERATING INFRASTRUCTURE PLAN ==="'
-    # Passes Proxmox tokens and the SSH key dynamically via environment injection
     - |
       sudo podman run --rm \
-        -v "$PWD":/workspace \
-        -v "${STATE_DIR}":/workspace/.terraform \
+        -v "${CI_PROJECT_DIR}":/workspace:z \
+        -v "${STATE_DIR}":/workspace/.terraform:z \
         -w /workspace \
         -e PM_API_TOKEN="${PVE_TOKEN_ID}=${PVE_TOKEN_SECRET}" \
         -e TF_VAR_ssh_public_key="${TF_VAR_ssh_public_key}" \
@@ -49,11 +48,10 @@ tofu_apply:
     - tofu_plan
   script:
     - 'echo "=== 3. APPLYING CHANGES TO PROXMOX VE CLUSTER ==="'
-    # Deploys configurations to Proxmox via the authenticated container pipeline
     - |
       sudo podman run --rm \
-        -v "$PWD":/workspace \
-        -v "${STATE_DIR}":/workspace/.terraform \
+        -v "${CI_PROJECT_DIR}":/workspace:z \
+        -v "${STATE_DIR}":/workspace/.terraform:z \
         -w /workspace \
         -e PM_API_TOKEN="${PVE_TOKEN_ID}=${PVE_TOKEN_SECRET}" \
         -e TF_VAR_ssh_public_key="${TF_VAR_ssh_public_key}" \
