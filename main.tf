@@ -4,7 +4,7 @@
 resource "proxmox_virtual_environment_vm" "openbao_server" {
   name        = "vm-openbao-prod-01"
   description = "Production OpenBao Secret Vault Server - Secure API Provisioning"
-  vm_id       = 100
+  vm_id       = 102
   node_name   = "pve1"
 
   # ➔ Link to your hardened CIS/ANSSI RHEL 9 Golden Image Template (ID 9000)
