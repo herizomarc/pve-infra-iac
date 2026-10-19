@@ -3,14 +3,14 @@
 # 🔒 1. RED HAT SUBSCRIPTION & CODEREADY BUILDER ENROLLMENT
 # =========================================================================
 - name: Register system to Red Hat Subscription Manager using Activation Key
-  redhat_subscription:
+  community.general.redhat_subscription:
     state: present
     org_id: "{{ rhsm_org_id }}"
     activationkey: "{{ rhsm_activation_key }}"
     force_register: yes
 
 - name: Enable official Red Hat base software repositories including CodeReady (CRB)
-  rhsm_repository:
+  community.general.rhsm_repository:
     name:
       - rhel-9-for-x86_64-baseos-rpms
       - rhel-9-for-x86_64-appstream-rpms
@@ -33,14 +33,14 @@
     state: present
 
 - name: Allow OpenBao core API and Cluster ports inside SELinux policy maps
-  seport:
+  community.general.seport:
     ports: "8200,8201"
     proto: tcp
     setype: hkp_port_t
     state: present
 
 - name: Open OpenBao API port (8200) inside Firewalld permanent zone
-  firewalld:
+  ansible.posix.firewalld:
     port: 8200/tcp
     permanent: yes
     state: enabled
@@ -48,7 +48,7 @@
     zone: public
 
 - name: Open OpenBao Cluster replication port (8201) inside Firewalld permanent zone
-  firewalld:
+  ansible.posix.firewalld:
     port: 8201/tcp
     permanent: yes
     state: enabled
@@ -98,15 +98,20 @@
 # =========================================================================
 # 📦 4. REPOSITORY INJECTION & SOFTWARE INSTALLATION
 # =========================================================================
-- name: Configure official OpenBao secure RPM repository
+- name: Configure official OpenBao secure RPM repository with strict SSL verification
   yum_repository:
     name: openbao
     description: OpenBao Official Stable Repository
-    baseurl: https://openbao.org
+    baseurl: https://pkgs.openbao.org/rpm/$basearch
     enabled: true
     gpgcheck: true
-    gpgkey: https://openbao.org
+    repo_gpgcheck: false
+    gpgkey: https://openbao.org/assets/openbao-gpg-pub-20240618.asc
+    sslverify: true
+    sslcacert: /etc/pki/tls/certs/ca-bundle.crt
+    metadata_expire: "300"
     mode: '0644'
+
 
 - name: Install official OpenBao runtime server binary
   dnf:
