@@ -82,7 +82,7 @@ tofu_apply:
   when: manual # Explicit human approval gate for production changes
 
 # =========================================================================
-# STAGE 3: ANSIBLE APPLICATION PROVISIONING (ENCRYPTED VAULT)
+#  STAGE 3: ANSIBLE APPLICATION PROVISIONING (ENCRYPTED VAULT)
 # =========================================================================
 ansible_configure:
   stage: configure
@@ -90,6 +90,8 @@ ansible_configure:
     - image-builder # Runs locally on Runner shell to inherit native network SSH access
   dependencies:
     - tofu_apply # Inherits the hosts.ini file generated during the apply stage
+  needs:
+    - tofu_apply #  FORCE GITLAB TO WAIT FOR MANUAL APPLY SUCCESS BEFORE RUNNING
   before_script:
     - |
       if [ ! -f "${VAULT_PASS_FILE}" ]; then
