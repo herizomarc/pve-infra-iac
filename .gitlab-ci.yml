@@ -63,4 +63,4 @@ tofu_apply:
     - main
   when: manual
 
-# Triggering fresh deployment with validated PVE admin tokens"
+# Triggering fresh deployment with validated PVE token credentials"
