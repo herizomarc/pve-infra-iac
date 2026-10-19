@@ -1,0 +1,140 @@
+---
+# =========================================================================
+# 🔒 1. RED HAT SUBSCRIPTION & CODEREADY BUILDER ENROLLMENT
+# =========================================================================
+- name: Register system to Red Hat Subscription Manager using Activation Key
+  redhat_subscription:
+    state: present
+    org_id: "{{ rhsm_org_id }}"
+    activationkey: "{{ rhsm_activation_key }}"
+    force_register: yes
+
+- name: Enable official Red Hat base software repositories including CodeReady (CRB)
+  rhsm_repository:
+    name:
+      - rhel-9-for-x86_64-baseos-rpms
+      - rhel-9-for-x86_64-appstream-rpms
+      - codeready-builder-for-rhel-9-x86_64-rpms
+    state: enabled
+
+- name: Execute baseline system security upgrades via DNF
+  dnf:
+    name: "*"
+    state: latest
+    exclude: kernel*
+    update_cache: yes
+
+# =========================================================================
+# 🛡️ 2. SYSTEM HARDENING : FIREWALLD & SELINUX POLICY CONFIGURATION
+# =========================================================================
+- name: Ensure policycoreutils-python-utils is installed for SELinux management
+  dnf:
+    name: policycoreutils-python-utils
+    state: present
+
+- name: Allow OpenBao core API and Cluster ports inside SELinux policy maps
+  seport:
+    ports: "8200,8201"
+    proto: tcp
+    setype: hkp_port_t
+    state: present
+
+- name: Open OpenBao API port (8200) inside Firewalld permanent zone
+  firewalld:
+    port: 8200/tcp
+    permanent: yes
+    state: enabled
+    immediate: yes
+    zone: public
+
+- name: Open OpenBao Cluster replication port (8201) inside Firewalld permanent zone
+  firewalld:
+    port: 8201/tcp
+    permanent: yes
+    state: enabled
+    immediate: yes
+    zone: public
+
+# =========================================================================
+# 💾 3. STORAGE PARTITIONING & ISOLATION (DISQUE SDB DE 15 GO)
+# =========================================================================
+- name: Install LVM2 dependency tools
+  dnf:
+    name: lvm2
+    state: present
+
+- name: Create Volume Group on top of /dev/sdb hardware boundary
+  lvg:
+    vg: vg_openbao
+    pvs: /dev/sdb
+
+- name: Create Logical Volume for clustered Raft database storage
+  lvol:
+    vg: vg_openbao
+    lv: lv_data
+    size: 100%FREE
+
+- name: Format the logical volume with enterprise XFS filesystem
+  filesystem:
+    fstype: xfs
+    dev: /dev/mapper/vg_openbao-lv_data
+
+- name: Enforce secure storage mount directory layout
+  file:
+    path: /srv/openbao
+    state: directory
+    owner: root
+    group: root
+    mode: '0750'
+
+- name: Mount and bind partition mapping to /srv/openbao permanently
+  mount:
+    path: /srv/openbao
+    src: /dev/mapper/vg_openbao-lv_data
+    fstype: xfs
+    opts: defaults
+    state: mounted
+
+# =========================================================================
+# 📦 4. REPOSITORY INJECTION & SOFTWARE INSTALLATION
+# =========================================================================
+- name: Configure official OpenBao secure RPM repository
+  yum_repository:
+    name: openbao
+    description: OpenBao Official Stable Repository
+    baseurl: https://openbao.org
+    enabled: true
+    gpgcheck: true
+    gpgkey: https://openbao.org
+    mode: '0644'
+
+- name: Install official OpenBao runtime server binary
+  dnf:
+    name: openbao
+    state: present
+
+- name: Restructure volume ownership for the openbao system user
+  file:
+    path: /srv/openbao
+    owner: openbao
+    group: openbao
+    state: directory
+    recurse: yes
+
+# =========================================================================
+# ⚙️ 5. CRYPTOGRAPHIC SERVER RUNTIME CONFIGURATION
+# =========================================================================
+- name: Deploy hardened production bao.hcl configuration
+  template:
+    src: bao.hcl.j2
+    dest: /etc/openbao/bao.hcl
+    owner: root
+    group: openbao
+    mode: '0640'
+  notify: Restart OpenBao Service
+
+- name: Force systemd state sync and enable openbao at boot
+  systemd:
+    name: openbao
+    enabled: yes
+    state: started

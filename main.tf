@@ -64,3 +64,15 @@ resource "proxmox_virtual_environment_vm" "openbao_server" {
     }
   }
 }
+
+# =========================================================================
+# 🤖 GÉNÉRATION AUTOMATISÉE DE L'INVENTAIRE DYNAMIQUE POUR ANSIBLE
+# =========================================================================
+resource "local_file" "ansible_inventory" {
+  filename        = "${path.module}/ansible-inventory/hosts.ini"
+  file_permission = "0644"
+  content         = <<EOF
+[openbao]
+vm-openbao-prod-01 ansible_host=${split("/", proxmox_virtual_environment_vm.openbao_server.initialization.ip_config.ipv4.address)[0]} ansible_user=secops
+EOF
+}
