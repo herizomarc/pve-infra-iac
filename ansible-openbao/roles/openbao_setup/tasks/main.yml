@@ -39,6 +39,11 @@
     setype: trivnet1_port_t
     state: present
 
+- name: Ensure python3-firewall bindings are installed on the target system
+  dnf:
+    name: python3-firewall
+    state: present
+
 - name: Open OpenBao API port (8200) inside Firewalld permanent zone
   ansible.posix.firewalld:
     port: 8200/tcp
