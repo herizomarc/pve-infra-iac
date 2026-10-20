@@ -1,5 +1,5 @@
 # =========================================================================
-# 🏆 ENTERPRISE GITOPS PIPELINE: CONTAINERIZED DOCKER ARCHITECTURE
+# 🏆 ENTERPRISE GITOPS PIPELINE: CONTAINERIZED PODMAN ARCHITECTURE
 # =========================================================================
 
 stages:
@@ -26,7 +26,7 @@ variables:
         echo "CRITICAL ERROR: Local secure variables file ${SECURE_TFVARS} missing on Runner disk!"
         exit 1
       fi
-  # ➔ FIXED: Strict array of strings configuration to prevent GitLab-CI linter failures
+  # ➔ Post-execution cleanup: Strict array of strings configuration to prevent GitLab-CI linter failures
   after_script:
     - 'echo "=== CLEANUP: Restoring workspace files permissions to gitlab-runner ==="'
     - 'sudo chown -R gitlab-runner:gitlab-runner "${CI_PROJECT_DIR}"'
@@ -40,7 +40,7 @@ tofu_plan:
   script:
     - 'echo "=== 1. INITIALIZING OPENTOFU ENVIRONMENT ==="'
     - |
-      sudo docker run --rm \
+      sudo podman run --rm \
         -v "${CI_PROJECT_DIR}":/workspace:z \
         -v "${STATE_DIR}":/workspace/.terraform:z \
         -w /workspace \
@@ -48,7 +48,7 @@ tofu_plan:
 
     - 'echo "=== 2. GENERATING INFRASTRUCTURE STATE MAP ==="'
     - |
-      sudo docker run --rm \
+      sudo podman run --rm \
         -v "${CI_PROJECT_DIR}":/workspace:z \
         -v "${STATE_DIR}":/workspace/.terraform:z \
         -v "${SECURE_TFVARS}":/workspace/terraform.tfvars:z \
@@ -71,7 +71,7 @@ tofu_apply:
   script:
     - 'echo "=== 3. EXECUTING PROXMOX INSTANCE PROVISIONING ==="'
     - |
-      sudo docker run --rm \
+      sudo podman run --rm \
         -v "${CI_PROJECT_DIR}":/workspace:z \
         -v "${STATE_DIR}":/workspace/.terraform:z \
         -v "${SECURE_TFVARS}":/workspace/terraform.tfvars:z \
@@ -87,7 +87,7 @@ tofu_apply:
   when: manual # Explicit human approval gate for production changes
 
 # =========================================================================
-# 🤖 STAGE 3: CONTAINERIZED ANSIBLE PROVISIONING (PURE DOCKER SECOPS)
+# 🤖 STAGE 3: CONTAINERIZED ANSIBLE PROVISIONING (PURE PODMAN SECOPS)
 # =========================================================================
 ansible_configure:
   stage: configure
@@ -109,15 +109,15 @@ ansible_configure:
       fi
   script:
     - 'echo "=== 4. LAUNCHING CONTAINERIZED ANSIBLE CONFIGURATION ==="'
-    # ➔ Running Ansible inside an official Red Hat container powered by Docker
+    # ➔ Running Ansible inside an official Red Hat container powered by Podman
     - |
-      sudo docker run --rm \
+      sudo podman run --rm \
         -v "${CI_PROJECT_DIR}":/workspace:z \
         -v "${VAULT_PASS_FILE}":/vault-password.txt:z \
         -w /workspace/ansible-openbao \
         ${ANSIBLE_IMAGE} \
         ansible-playbook -i ../ansible-inventory/hosts.ini site.yml --vault-password-file /vault-password.txt
-  # ➔ FIXED: Strict array of strings configuration to prevent GitLab-CI linter failures
+  # ➔ Post-execution cleanup: Strict array of strings configuration to prevent GitLab-CI linter failures
   after_script:
     - 'echo "=== CLEANUP: Restoring workspace files permissions to gitlab-runner ==="'
     - 'sudo chown -R gitlab-runner:gitlab-runner "${CI_PROJECT_DIR}"'
