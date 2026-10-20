@@ -9,7 +9,7 @@ stages:
 
 variables:
   TOFU_IMAGE: "ghcr.io/opentofu/opentofu:1.8.4"
-  ANSIBLE_IMAGE: "://redhat.com"
+  ANSIBLE_IMAGE: "docker.io/alpine/ansible:2.21.0"
   STATE_DIR: "/var/lib/gitlab-runner/share/tofu-state"
   SECURE_TFVARS: "/var/lib/gitlab-runner/secure-vars/production.tfvars"
   VAULT_PASS_FILE: "/var/lib/gitlab-runner/secure-vars/vault-password.txt"
