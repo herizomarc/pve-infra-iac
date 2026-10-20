@@ -37,25 +37,26 @@ tofu_plan:
   extends: .tofu_base
   script:
     - 'echo "=== 1. INITIALIZING OPENTOFU ENVIRONMENT ==="'
+    # ➔ SOURCE IN READ-ONLY (:ro) AND CACHE BOUNDARY PERSISTED VIA ROOTLESS COMPLIANT LABELS (:z)
     - |
       podman run --rm \
-        -v "${CI_PROJECT_DIR}":/workspace:O \
-        -v "${STATE_DIR}":/workspace/.terraform:O \
+        -v "${CI_PROJECT_DIR}":/workspace:ro \
+        -v "${STATE_DIR}":/workspace/.terraform:z \
         -w /workspace \
         ${TOFU_IMAGE} init
 
     - 'echo "=== 2. GENERATING INFRASTRUCTURE STATE MAP ==="'
     - |
       podman run --rm \
-        -v "${CI_PROJECT_DIR}":/workspace:O \
-        -v "${STATE_DIR}":/workspace/.terraform:O \
+        -v "${CI_PROJECT_DIR}":/workspace:ro \
+        -v "${STATE_DIR}":/workspace/.terraform:z \
         -v "${SECURE_TFVARS}":/workspace/terraform.tfvars:ro \
+        -v "${CI_PROJECT_DIR}":/workspace_out:z \
         -w /workspace \
-        ${TOFU_IMAGE} plan -out=tofu.plan
+        ${TOFU_IMAGE} plan -out=/workspace_out/tofu.plan
   artifacts:
     paths:
       - tofu.plan
-      - .terraform.lock.hcl
     expire_in: 1 hour
 
 # =========================================================================
@@ -70,11 +71,12 @@ tofu_apply:
     - 'echo "=== 3. EXECUTING PROXMOX INSTANCE PROVISIONING ==="'
     - |
       podman run --rm \
-        -v "${CI_PROJECT_DIR}":/workspace:O \
-        -v "${STATE_DIR}":/workspace/.terraform:O \
+        -v "${CI_PROJECT_DIR}":/workspace:ro \
+        -v "${STATE_DIR}":/workspace/.terraform:z \
         -v "${SECURE_TFVARS}":/workspace/terraform.tfvars:ro \
+        -v "${CI_PROJECT_DIR}":/workspace_out:z \
         -w /workspace \
-        ${TOFU_IMAGE} apply -auto-approve tofu.plan
+        ${TOFU_IMAGE} apply -auto-approve /workspace_out/tofu.plan
   artifacts:
     paths:
       - ansible-inventory/hosts.ini
@@ -117,7 +119,7 @@ ansible_configure:
     - 'echo "=== 5. LAUNCHING CONTAINERIZED ANSIBLE CONFIGURATION VIA SOCKET ==="'
     - |
       podman run --rm \
-        -v "${CI_PROJECT_DIR}":/workspace:O \
+        -v "${CI_PROJECT_DIR}":/workspace:ro \
         -v "${VAULT_PASS_FILE}":/vault-password.txt:ro \
         -v "${SSH_AUTH_SOCK}":/ssh-agent.sock \
         -e SSH_AUTH_SOCK=/ssh-agent.sock \
