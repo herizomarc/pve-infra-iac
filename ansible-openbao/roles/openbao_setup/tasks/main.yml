@@ -36,7 +36,7 @@
   community.general.seport:
     ports: "8200,8201"
     proto: tcp
-    setype: hkp_port_t
+    setype: vetted_port_t
     state: present
 
 - name: Open OpenBao API port (8200) inside Firewalld permanent zone
