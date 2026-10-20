@@ -1,78 +1,55 @@
 # =========================================================================
-# 📝 IN-MEMORY GENERATION OF THE IMMUTABLE BOUNDARY (NO HOST reliance)
-# =========================================================================
-data "cloudinit_config" "openbao_bootstrap" {
-  gzip          = false
-  base64_encode = false
-
-  part {
-    content_type = "text/cloud-config"
-    content      = <<EOF
-#cloud-config
-# Pure SecOps bypass: Strictly disable automatic package lookups to ensure quick boot
-package_update: false
-package_upgrade: false
-package_reboot_if_required: false
-EOF
-  }
-}
-
-# =========================================================================
-# 💾 VIRTUAL METADATA UPLOAD VIA NETWORKING API (NEVER TOUCH THE HOST FILESYSTEM)
-# =========================================================================
-resource "proxmox_virtual_environment_file" "openbao_cloudinit" {
-  content_type = "snippets"
-  datastore_id = "local"
-  node_name    = "pve1"
-
-  source_raw {
-    data      = data.cloudinit_config.openbao_bootstrap.rendered
-    file_name = "openbao-stateless-bypass.yaml"
-  }
-}
-
-# =========================================================================
-# 🔒 PROVISIONING DE LA VM OPENBAO
+# SECURE OPENBAO VAULT INSTANCE (DEDICATED SECURE VM)
 # =========================================================================
 resource "proxmox_virtual_environment_vm" "openbao_server" {
   name        = "vm-openbao-prod-01"
-  description = "Production OpenBao Vault Server - Clean OS Bootstrap"
+  description = "Production OpenBao Secret Vault Server - Secure API Provisioning"
   vm_id       = 102
   node_name   = "pve1"
 
+  # ➔ Link to your hardened CIS/ANSSI RHEL 9 Golden Image Template (ID 9000)
   clone {
     vm_id = 9000
-    full  = false
+    full  = false # Linked clone architecture for lightning-fast deployments
   }
 
-  agent { enabled = true }
-  cpu { 
-    cores = 2 
-    type = "host" 
-    }
+  # ➔ Hardware Provisioning Layout
+  agent {
+    enabled = true # Communicates natively with the pre-baked QEMU Guest Agent
+  }
 
-  memory { dedicated = 2048 }
+  cpu {
+    cores = 2
+    type  = "host"
+  }
 
-  disk { 
+  memory {
+    dedicated = 2048
+  }
+
+  # ➔ Decoupled Storage Provisioning (CIS Boundary Hardening Compliance)
+  # SCSI 0: Main system disk inheriting the pre-baked golden image CIS partitioning
+  disk {
     datastore_id = "local-lvm"
-    interface    = "scsi0" # OS Root disk
-    size         = 20 
+    interface    = "scsi0"
+    size         = 20
   }
-  
-  disk { 
+
+  # SCSI 1: Isolated, dedicated data disk explicitly reserved for OpenBao Raft DB storage (/srv/openbao)
+  disk {
     datastore_id = "local-lvm"
-    interface    = "scsi1" # ➔ REQUIS: Spécifie le bus matériel pour le disque de secrets
-    size         = 15 
-    file_format  = "raw" 
+    interface    = "scsi1"
+    size         = 15
+    file_format  = "raw"
   }
 
-
-  network_device { 
+  # ➔ Network Device Mapping
+  network_device {
     bridge = "vmbr0"
-    model = "virtio" 
-       
-    }
+    model  = "virtio"
+  }
 
+  # ➔ Cloud-Init System Level Initialization
   initialization {
     ip_config {
       ipv4 {
@@ -80,18 +57,18 @@ resource "proxmox_virtual_environment_vm" "openbao_server" {
         gateway = "10.10.99.1"
       }
     }
+
     user_account {
-      username = "secops"
-      keys     = [var.ssh_public_key]
+      username = "secops" # Safe, localized non-root administrative account
+      keys     = [var.ssh_public_key] # Dynamically injected at runtime from tfvars
     }
-    
-    # ➔ INJECTION DE LA CONFIGURATION DE CONFINEMENT SANS FICHIER PHYSIQUE SUR L'HÔTE
-    user_data_file_id = proxmox_virtual_environment_file.openbao_cloudinit.id
+
+    upgrade = false
   }
 }
 
 # =========================================================================
-# 🤖 AUTOMATED INVENTORY GENERATION FOR ANSIBLE
+# AUTOMATED INVENTORY GENERATION FOR ANSIBLE
 # =========================================================================
 resource "local_file" "ansible_inventory" {
   filename        = "${path.module}/ansible-inventory/hosts.ini"
@@ -101,4 +78,3 @@ resource "local_file" "ansible_inventory" {
 vm-openbao-prod-01 ansible_host=${split("/", proxmox_virtual_environment_vm.openbao_server.initialization[0].ip_config[0].ipv4[0].address)[0]} ansible_user=secops
 EOF
 }
-
