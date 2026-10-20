@@ -1,22 +1,23 @@
 # =========================================================================
-# GITOPS PIPELINE: OPENTOFU (IAAS) + ANSIBLE VAULT (CONFIG)
+# 🏆 IMMUTABLE GITOPS PIPELINE: CONTAINERIZED OPENTOFU & CONTAINERIZED ANSIBLE
 # =========================================================================
 
 stages:
   - plan
   - apply
-  - configure  
+  - configure  # Application-level deployment via ephemeral container execution
 
 variables:
   TOFU_IMAGE: "ghcr.io/opentofu/opentofu:1.8.4"
+  ANSIBLE_IMAGE: "://redhat.com"
   STATE_DIR: "/var/lib/gitlab-runner/share/tofu-state"
   SECURE_TFVARS: "/var/lib/gitlab-runner/secure-vars/production.tfvars"
   VAULT_PASS_FILE: "/var/lib/gitlab-runner/secure-vars/vault-password.txt"
 
-
+# ➔ Global infrastructure prerequisites template
 .tofu_base:
   tags:
-    - image-builder # Targets dedicated RHEL 9.8 VM Runner
+    - image-builder # Targets your dedicated RHEL 9.8 VM Runner
   before_script:
     - sudo mkdir -p "${STATE_DIR}"
     - sudo chown -R gitlab-runner:gitlab-runner "${STATE_DIR}"
@@ -25,9 +26,13 @@ variables:
         echo "CRITICAL ERROR: Local secure variables file ${SECURE_TFVARS} missing on Runner disk!"
         exit 1
       fi
+  # ➔ FIXED: RESTORE FILESYSTEM OWNERSHIP TO PREVENT PERMISSION DENIED ON NEXT RUNS
+  after_script:
+    - echo "=== CLEANUP: Restoring workspace files permissions to gitlab-runner ==="
+    - sudo chown -R gitlab-runner:gitlab-runner "${CI_PROJECT_DIR}"
 
 # =========================================================================
-#  STAGE 1: OPENTOFU ORCHESTRATION PLAN
+# 🔍 STSTAGE 1: OPENTOFU ORCHESTRATION PLAN
 # =========================================================================
 tofu_plan:
   stage: plan
@@ -56,7 +61,7 @@ tofu_plan:
     expire_in: 1 hour
 
 # =========================================================================
-# STAGE 2: OPENTOFU INFRASTRUCTURE DEPLOYMENT (STATELESS)
+# 🚀 STSTAGE 2: OPENTOFU INFRASTRUCTURE DEPLOYMENT (STATELESS)
 # =========================================================================
 tofu_apply:
   stage: apply
@@ -74,7 +79,7 @@ tofu_apply:
         ${TOFU_IMAGE} apply -auto-approve tofu.plan
   artifacts:
     paths:
-      # Pass the dynamic inventory file as an artifact to the Ansible stage
+      # ➔ Pass the dynamic inventory file as an artifact to the Ansible stage
       - ansible-inventory/hosts.ini
     expire_in: 1 hour
   only:
@@ -82,16 +87,16 @@ tofu_apply:
   when: manual # Explicit human approval gate for production changes
 
 # =========================================================================
-#  STAGE 3: ANSIBLE APPLICATION PROVISIONING (ENCRYPTED VAULT)
+# 🤖 STSTAGE 3: CONTAINERIZED ANSIBLE PROVISIONING (PURE SECOPS ISOLATION)
 # =========================================================================
 ansible_configure:
   stage: configure
   tags:
-    - image-builder # Runs locally on Runner shell to inherit native network SSH access
+    - image-builder # Inherits native network SSH access from Runner shell
   dependencies:
-    - tofu_apply # Inherits the hosts.ini file generated during the apply stage
+    - tofu_apply # Inherits the hosts.ini file generated during apply
   needs:
-    - tofu_apply #  FORCE GITLAB TO WAIT FOR MANUAL APPLY SUCCESS BEFORE RUNNING
+    - tofu_apply # Hard gate checkpoint to enforce sequential ordering
   before_script:
     - |
       if [ ! -f "${VAULT_PASS_FILE}" ]; then
@@ -103,9 +108,18 @@ ansible_configure:
         exit 1
       fi
   script:
-    - 'echo "=== 4. LAUNCHING AUTOMATED CONFIG-AS-CODE DISPATCH ==="'
-    - cd ansible-openbao
-    # Triggers Ansible with in-memory decryption using the server's local vault file
-    - ansible-playbook -i ../ansible-inventory/hosts.ini site.yml --vault-password-file "${VAULT_PASS_FILE}"
+    - 'echo "=== 4. LAUNCHING CONTAINERIZED ANSIBLE CONFIGURATION ==="'
+    # ➔ RUNNING ANSIBLE INSIDE AN EPHEMERAL OFFICIAL RED HAT CONTAINER
+    - |
+      sudo podman run --rm \
+        -v "${CI_PROJECT_DIR}":/workspace:z \
+        -v "${VAULT_PASS_FILE}":/vault-password.txt:z \
+        -w /workspace/ansible-openbao \
+        ${ANSIBLE_IMAGE} \
+        ansible-playbook -i ../ansible-inventory/hosts.ini site.yml --vault-password-file /vault-password.txt
+  # ➔ FIXED: RESTORE FILESYSTEM OWNERSHIP AFTER ANSIBLE INTERNALS MUTATIONS
+  after_script:
+    - echo "=== CLEANUP:Restoring workspace files permissions to gitlab-runner ==="
+    - sudo chown -R gitlab-runner:gitlab-runner "${CI_PROJECT_DIR}"
   only:
     - main
