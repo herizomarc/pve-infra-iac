@@ -1,5 +1,5 @@
 # =========================================================================
-# 🏆 ENTERPRISE GITOPS PIPELINE: HYBRID ROOTLESS PODMAN STORAGE ARCHITECTURE
+# 🏆 ENTERPRISE GITOPS PIPELINE: HYBRID ROOTLESS PODMAN USERNS MAPPING
 # =========================================================================
 
 stages:
@@ -37,9 +37,10 @@ tofu_plan:
   extends: .tofu_base
   script:
     - 'echo "=== 1. INITIALIZING OPENTOFU ENVIRONMENT ==="'
-    # ➔ SOURCE IN READ-ONLY (:ro) AND CACHE BOUNDARY PERSISTED VIA ROOTLESS COMPLIANT LABELS (:z)
+    # ➔ USERNS KEEP-ID: Maps the runner UID to bypass strict SELinux read boundaries safely
     - |
       podman run --rm \
+        --userns=keep-id \
         -v "${CI_PROJECT_DIR}":/workspace:ro \
         -v "${STATE_DIR}":/workspace/.terraform:z \
         -w /workspace \
@@ -48,6 +49,7 @@ tofu_plan:
     - 'echo "=== 2. GENERATING INFRASTRUCTURE STATE MAP ==="'
     - |
       podman run --rm \
+        --userns=keep-id \
         -v "${CI_PROJECT_DIR}":/workspace:ro \
         -v "${STATE_DIR}":/workspace/.terraform:z \
         -v "${SECURE_TFVARS}":/workspace/terraform.tfvars:ro \
@@ -71,6 +73,7 @@ tofu_apply:
     - 'echo "=== 3. EXECUTING PROXMOX INSTANCE PROVISIONING ==="'
     - |
       podman run --rm \
+        --userns=keep-id \
         -v "${CI_PROJECT_DIR}":/workspace:ro \
         -v "${STATE_DIR}":/workspace/.terraform:z \
         -v "${SECURE_TFVARS}":/workspace/terraform.tfvars:ro \
@@ -119,6 +122,7 @@ ansible_configure:
     - 'echo "=== 5. LAUNCHING CONTAINERIZED ANSIBLE CONFIGURATION VIA SOCKET ==="'
     - |
       podman run --rm \
+        --userns=keep-id \
         -v "${CI_PROJECT_DIR}":/workspace:ro \
         -v "${VAULT_PASS_FILE}":/vault-password.txt:ro \
         -v "${SSH_AUTH_SOCK}":/ssh-agent.sock \
