@@ -1,6 +1,6 @@
 ---
 # =========================================================================
-# 🔒 1. RED HAT SUBSCRIPTION & CODEREADY BUILDER ENROLLMENT
+# 📦 PHASE 1 : SUBSCRIPTION & DEPENDENCIES INSTALLATION (DNF BLOCK)
 # =========================================================================
 - name: Register system to Red Hat Subscription Manager using Activation Key
   community.general.redhat_subscription:
@@ -9,7 +9,7 @@
     activationkey: "{{ rhsm_activation_key }}"
     force_register: yes
 
-- name: Enable official Red Hat base software repositories including CodeReady (CRB)
+- name: Enable official Red Hat software repositories including CodeReady (CRB)
   community.general.rhsm_repository:
     name:
       - rhel-9-for-x86_64-baseos-rpms
@@ -24,50 +24,38 @@
     exclude: kernel*
     update_cache: yes
 
-# =========================================================================
-# 🛡️ 2. SYSTEM HARDENING : FIREWALLD & SELINUX POLICY CONFIGURATION
-# =========================================================================
-- name: Ensure policycoreutils-python-utils is installed for SELinux management
+- name: Install all enterprise dependency packages and system software tools
   dnf:
-    name: policycoreutils-python-utils
+    name:
+      - policycoreutils-python-utils  # SELinux tooling
+      - firewalld                     # Firewall daemon core
+      - python3-firewall              # Ansible firewall bindings
+      - lvm2                          # Logical Volume Management tools
     state: present
 
-- name: Allow OpenBao core API and Cluster ports inside SELinux policy maps
-  community.general.seport:
-    ports: "8201"
-    proto: tcp
-    setype: trivnet1_port_t
-    state: present
+- name: Configure official OpenBao secure RPM repository with strict SSL verification
+  yum_repository:
+    name: openbao
+    description: OpenBao Official Stable Repository
+    baseurl: https://pkgs.openbao.org/rpm/$basearch
+    enabled: true
+    gpgcheck: true
+    repo_gpgcheck: false
+    gpgkey: https://openbao.org/assets/openbao-gpg-pub-20240618.asc
+    sslverify: true
+    sslcacert: /etc/pki/tls/certs/ca-bundle.crt
+    metadata_expire: "300"
+    mode: '0644'
 
-- name: Ensure python3-firewall bindings are installed on the target system
+
+- name: Install official OpenBao runtime server binary package
   dnf:
-    name: python3-firewall
+    name: openbao
     state: present
-
-- name: Open OpenBao API port (8200) inside Firewalld permanent zone
-  ansible.posix.firewalld:
-    port: 8200/tcp
-    permanent: yes
-    state: enabled
-    immediate: yes
-    zone: public
-
-- name: Open OpenBao Cluster replication port (8201) inside Firewalld permanent zone
-  ansible.posix.firewalld:
-    port: 8201/tcp
-    permanent: yes
-    state: enabled
-    immediate: yes
-    zone: public
 
 # =========================================================================
-# 💾 3. STORAGE PARTITIONING & ISOLATION (DISQUE SDB DE 15 GO)
+# 💾 PHASE 2 : STORAGE PROVISIONING & INFRASTRUCTURE BOUNDARIES
 # =========================================================================
-- name: Install LVM2 dependency tools
-  dnf:
-    name: lvm2
-    state: present
-
 - name: Create Volume Group on top of /dev/sdb hardware boundary
   lvg:
     vg: vg_openbao
@@ -100,29 +88,6 @@
     opts: defaults
     state: mounted
 
-# =========================================================================
-# 📦 4. REPOSITORY INJECTION & SOFTWARE INSTALLATION
-# =========================================================================
-- name: Configure official OpenBao secure RPM repository with strict SSL verification
-  yum_repository:
-    name: openbao
-    description: OpenBao Official Stable Repository
-    baseurl: https://pkgs.openbao.org/rpm/$basearch
-    enabled: true
-    gpgcheck: true
-    repo_gpgcheck: false
-    gpgkey: https://openbao.org/assets/openbao-gpg-pub-20240618.asc
-    sslverify: true
-    sslcacert: /etc/pki/tls/certs/ca-bundle.crt
-    metadata_expire: "300"
-    mode: '0644'
-
-
-- name: Install official OpenBao runtime server binary
-  dnf:
-    name: openbao
-    state: present
-
 - name: Restructure volume ownership for the openbao system user
   file:
     path: /srv/openbao
@@ -132,7 +97,40 @@
     recurse: yes
 
 # =========================================================================
-# ⚙️ 5. CRYPTOGRAPHIC SERVER RUNTIME CONFIGURATION
+# 🛡️ PHASE 3 : HARDENING & NETWORK SECURITY POLICIES (SELINUX & FIREWALLD)
+# =========================================================================
+- name: Allow OpenBao Cluster replication port inside SELinux policy maps
+  community.general.seport:
+    ports: "8201"
+    proto: tcp
+    setype: trivnet1_port_t
+    state: present
+
+- name: Enforce firewalld systemd state synchronization and enable at boot
+  systemd:
+    name: firewalld
+    state: started
+    enabled: yes
+    masked: no
+
+- name: Open OpenBao API port (8200) inside Firewalld permanent zone
+  ansible.posix.firewalld:
+    port: 8200/tcp
+    permanent: yes
+    state: enabled
+    immediate: yes
+    zone: public
+
+- name: Open OpenBao Cluster replication port (8201) inside Firewalld permanent zone
+  ansible.posix.firewalld:
+    port: 8201/tcp
+    permanent: yes
+    state: enabled
+    immediate: yes
+    zone: public
+
+# =========================================================================
+# ⚙️ PHASE 4 : SERVICE RUNTIME CONFIGURATION & STARTUP
 # =========================================================================
 - name: Deploy hardened production bao.hcl configuration
   template:
