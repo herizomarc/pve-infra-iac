@@ -1,5 +1,5 @@
 # =========================================================================
-# 🏆 ENTERPRISE GITOPS PIPELINE: CONTAINERIZED PODMAN ARCHITECTURE
+# 🏆 ENTERPRISE GITOPS PIPELINE: PURE ROOTLESS PODMAN ARCHITECTURE (SECOPS)
 # =========================================================================
 
 stages:
@@ -13,23 +13,23 @@ variables:
   STATE_DIR: "/var/lib/gitlab-runner/share/tofu-state"
   SECURE_TFVARS: "/var/lib/gitlab-runner/secure-vars/production.tfvars"
   VAULT_PASS_FILE: "/var/lib/gitlab-runner/secure-vars/vault-password.txt"
+  RUNNER_SSH_KEY: "/var/lib/gitlab-runner/secure-vars/priv_key_secops"
 
-# ➔ Shared initialization template for OpenTofu tasks
+# ➔ Shared initialization template for OpenTofu tasks (Rootless Podman)
 .tofu_base:
   tags:
     - image-builder # Targets your dedicated RHEL 9.8 VM Runner
   before_script:
-    - sudo mkdir -p "${STATE_DIR}"
-    - sudo chown -R gitlab-runner:gitlab-runner "${STATE_DIR}"
+    - mkdir -p "${STATE_DIR}"
     - |
       if [ ! -f "${SECURE_TFVARS}" ]; then
         echo "CRITICAL ERROR: Local secure variables file ${SECURE_TFVARS} missing on Runner disk!"
         exit 1
       fi
-  # ➔ Post-execution cleanup: Strict array of strings configuration to prevent GitLab-CI linter failures
+  # ➔ Post-execution cleanup: Ensure workspace remains completely clean
   after_script:
-    - 'echo "=== CLEANUP: Restoring workspace files permissions to gitlab-runner ==="'
-    - 'sudo chown -R gitlab-runner:gitlab-runner "${CI_PROJECT_DIR}"'
+    - 'echo "=== CLEANUP: Restoring workspace files permissions ==="'
+    - 'chown -R gitlab-runner:gitlab-runner "${CI_PROJECT_DIR}"'
 
 # =========================================================================
 # 🔍 STAGE 1: OPENTOFU ORCHESTRATION PLAN
@@ -40,18 +40,18 @@ tofu_plan:
   script:
     - 'echo "=== 1. INITIALIZING OPENTOFU ENVIRONMENT ==="'
     - |
-      sudo podman run --rm \
-        -v "${CI_PROJECT_DIR}":/workspace:z \
-        -v "${STATE_DIR}":/workspace/.terraform:z \
+      podman run --rm \
+        -v "${CI_PROJECT_DIR}":/workspace:O \
+        -v "${STATE_DIR}":/workspace/.terraform:O \
         -w /workspace \
         ${TOFU_IMAGE} init
 
     - 'echo "=== 2. GENERATING INFRASTRUCTURE STATE MAP ==="'
     - |
-      sudo podman run --rm \
-        -v "${CI_PROJECT_DIR}":/workspace:z \
-        -v "${STATE_DIR}":/workspace/.terraform:z \
-        -v "${SECURE_TFVARS}":/workspace/terraform.tfvars:z \
+      podman run --rm \
+        -v "${CI_PROJECT_DIR}":/workspace:O \
+        -v "${STATE_DIR}":/workspace/.terraform:O \
+        -v "${SECURE_TFVARS}":/workspace/terraform.tfvars:O \
         -w /workspace \
         ${TOFU_IMAGE} plan -out=tofu.plan
   artifacts:
@@ -71,10 +71,10 @@ tofu_apply:
   script:
     - 'echo "=== 3. EXECUTING PROXMOX INSTANCE PROVISIONING ==="'
     - |
-      sudo podman run --rm \
-        -v "${CI_PROJECT_DIR}":/workspace:z \
-        -v "${STATE_DIR}":/workspace/.terraform:z \
-        -v "${SECURE_TFVARS}":/workspace/terraform.tfvars:z \
+      podman run --rm \
+        -v "${CI_PROJECT_DIR}":/workspace:O \
+        -v "${STATE_DIR}":/workspace/.terraform:O \
+        -v "${SECURE_TFVARS}":/workspace/terraform.tfvars:O \
         -w /workspace \
         ${TOFU_IMAGE} apply -auto-approve tofu.plan
   artifacts:
@@ -87,7 +87,7 @@ tofu_apply:
   when: manual # Explicit human approval gate for production changes
 
 # =========================================================================
-# 🤖 STAGE 3: CONTAINERIZED ANSIBLE PROVISIONING (PURE PODMAN SECOPS)
+# 🤖 STAGE 3: CONTAINERIZED ANSIBLE PROVISIONING (PURE ROOTLESS SOCKET)
 # =========================================================================
 ansible_configure:
   stage: configure
@@ -103,23 +103,38 @@ ansible_configure:
         echo "CRITICAL ERROR: Isolated Ansible Vault password file ${VAULT_PASS_FILE} missing on Runner disk!"
         exit 1
       fi
+      if [ ! -f "${RUNNER_SSH_KEY}" ]; then
+        echo "CRITICAL ERROR: Private SSH Key ${RUNNER_SSH_KEY} missing on Runner disk!"
+        exit 1
+      fi
       if [ ! -f "ansible-inventory/hosts.ini" ]; then
         echo "CRITICAL ERROR: Dynamic inventory hosts.ini artifact missing from OpenTofu stage!"
         exit 1
       fi
   script:
-    - 'echo "=== 4. LAUNCHING CONTAINERIZED ANSIBLE CONFIGURATION ==="'
-    # ➔ Running Ansible inside an official Red Hat container powered by Podman
+    - 'echo "=== 4. STARTING SECURE SSH AGENT AND LOADING KEY IN RAM ==="'
+    # Start an ephemeral in-memory SSH agent process and enforce strict permissions on the key
+    - eval $(ssh-agent -s)
+    - chmod 600 "${RUNNER_SSH_KEY}"
+    - ssh-add "${RUNNER_SSH_KEY}"
+    
+    - 'echo "=== 5. LAUNCHING CONTAINERIZED ANSIBLE CONFIGURATION VIA SOCKET ==="'
+    # ➔ ROOTLESS SUCCESS MAP: Leverages overlay mapping (:O) and drops local labels constraints
     - |
-      sudo podman run --rm \
-        -v "${CI_PROJECT_DIR}":/workspace:z \
-        -v "${VAULT_PASS_FILE}":/vault-password.txt:z \
+      podman run --rm \
+        -v "${CI_PROJECT_DIR}":/workspace:O \
+        -v "${VAULT_PASS_FILE}":/vault-password.txt:ro \
+        -v "${SSH_AUTH_SOCK}":/ssh-agent.sock \
+        -e SSH_AUTH_SOCK=/ssh-agent.sock \
+        -e ANSIBLE_HOST_KEY_CHECKING=False \
+        -e ANSIBLE_SSH_ARGS="-o WarnWeakCrypto=no" \
+        --security-opt label=disable \
         -w /workspace/ansible-openbao \
         ${ANSIBLE_IMAGE} \
         ansible-playbook -i ../ansible-inventory/hosts.ini site.yml --vault-password-file /vault-password.txt
-  # ➔ Post-execution cleanup: Strict array of strings configuration to prevent GitLab-CI linter failures
+  # ➔ Post-execution cleanup: Native clean restore
   after_script:
     - 'echo "=== CLEANUP: Restoring workspace files permissions to gitlab-runner ==="'
-    - 'sudo chown -R gitlab-runner:gitlab-runner "${CI_PROJECT_DIR}"'
+    - 'chown -R gitlab-runner:gitlab-runner "${CI_PROJECT_DIR}"'
   only:
     - main
