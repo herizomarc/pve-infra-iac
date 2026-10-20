@@ -98,6 +98,7 @@ resource "local_file" "ansible_inventory" {
   file_permission = "0644"
   content         = <<EOF
 [openbao]
-vm-openbao-prod-01 ansible_host=${split("/", proxmox_virtual_environment_vm.openbao_server.initialization.ip_config.ipv4.address)} ansible_user=secops
+vm-openbao-prod-01 ansible_host=${split("/", proxmox_virtual_environment_vm.openbao_server.initialization[0].ip_config[0].ipv4[0].address)[0]} ansible_user=secops
 EOF
 }
+
