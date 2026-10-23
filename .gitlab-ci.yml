@@ -86,7 +86,16 @@ tofu_apply:
   dependencies:
     - tofu_plan
   script:
-    - 'echo "=== 3. EXECUTING PROXMOX MATRICIAL DEPLOYMENT ==="'
+    - 'echo "=== 3. RE-INITIALIZING IN-MEMORY PROVIDER PLUGINS ==="'
+    # ➔ SECOPS FIXED: Re-run init to force fresh local provider downloads if cache maps are opaque
+    - |
+      podman run --rm \
+        -v "${CI_PROJECT_DIR}":/workspace:z,U \
+        -v "${STATE_DIR}":/workspace/.terraform:z,U \
+        -w /workspace \
+        ${TOFU_IMAGE} init
+
+    - 'echo "=== 4. EXECUTING PROXMOX MATRICIAL DEPLOYMENT ==="'
     - |
       podman run --rm \
         -v "${CI_PROJECT_DIR}":/workspace:z,U \
