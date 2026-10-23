@@ -49,7 +49,7 @@ tofu_plan:
       podman run --rm \
         -v "${CI_PROJECT_DIR}":/workspace:z,U \
         -v "${STATE_DIR}":/workspace/.terraform:z,U \
-        -v "${SECURE_TFVARS}":/workspace/terraform.tfvars:ro \
+        -v "${SECURE_DIR}":/secure-vars:ro \
         -w /workspace \
         ${TOFU_IMAGE} plan -out=tofu.plan
   artifacts:
