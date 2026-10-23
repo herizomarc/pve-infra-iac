@@ -9,7 +9,6 @@ stages:
 variables:
   TOFU_IMAGE: "ghcr.io/opentofu/opentofu:1.8.4"
   STATE_DIR: "/var/lib/gitlab-runner/share/tofu-state"
-  SECURE_DIR: "/var/lib/gitlab-runner/secure-vars"
   SECURE_TFVARS: "${SECURE_DIR}/production.tfvars"
 
 .tofu_base:
@@ -49,7 +48,7 @@ tofu_plan:
       podman run --rm \
         -v "${CI_PROJECT_DIR}":/workspace:z,U \
         -v "${STATE_DIR}":/workspace/.terraform:z,U \
-        -v "${SECURE_DIR}":/secure-vars:ro \
+        -v "${SECURE_TFVARS}":/workspace/terraform.tfvars:ro \
         -w /workspace \
         ${TOFU_IMAGE} plan -out=tofu.plan
   artifacts:
@@ -72,7 +71,7 @@ tofu_apply:
       podman run --rm \
         -v "${CI_PROJECT_DIR}":/workspace:z,U \
         -v "${STATE_DIR}":/workspace/.terraform:z,U \
-        -v "${SECURE_DIR}":/secure-vars:ro \
+       -v "${SECURE_TFVARS}":/workspace/terraform.tfvars:ro \
         -w /workspace \
         ${TOFU_IMAGE} apply -auto-approve tofu.plan
   artifacts:

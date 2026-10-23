@@ -11,3 +11,6 @@
 # Ignore plans and logs
 *.plan
 *.log
+
+# EXCEPTIONS : Autoriser explicitement la topologie publique GitOps
+!terraform.tfvars
