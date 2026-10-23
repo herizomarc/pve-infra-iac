@@ -10,6 +10,7 @@ variables:
   TOFU_IMAGE: "ghcr.io/opentofu/opentofu:1.8.4"
   STATE_DIR: "/var/lib/gitlab-runner/share/tofu-state"
   SECURE_DIR: "/var/lib/gitlab-runner/secure-vars"
+  SECURE_TFVARS: "${SECURE_DIR}/production.tfvars"
 
 .tofu_base:
   tags:
