@@ -9,7 +9,7 @@ stages:
 variables:
   TOFU_IMAGE: "ghcr.io/opentofu/opentofu:1.8.4"
   STATE_DIR: "/var/lib/gitlab-runner/share/tofu-state"
-  SECURE_TFVARS: "/var/lib/gitlab-runner/secure-vars/production.tfvars"
+  SECURE_DIR: "/var/lib/gitlab-runner/secure-vars"
 
 .tofu_base:
   tags:
@@ -43,14 +43,14 @@ tofu_plan:
         ${TOFU_IMAGE} init
 
     - 'echo "=== 2. GENERATING ZERO-TRUST INFRASTRUCTURE DELTA STATE MAP ==="'
-    # Injecting local host variables in read-only mode to prevent credential leaks into the repository schema
+    # Mounting the secure directory to /secure-vars:ro instead of a single file overlay
     - |
       podman run --rm \
         -v "${CI_PROJECT_DIR}":/workspace:z,U \
         -v "${STATE_DIR}":/workspace/.terraform:z,U \
-        -v "${SECURE_TFVARS}":/workspace/terraform.tfvars:ro \
+        -v "${SECURE_DIR}":/secure-vars:ro \
         -w /workspace \
-        ${TOFU_IMAGE} plan -var-file=production.tfvars -out=tofu.plan
+        ${TOFU_IMAGE} plan -var-file=/secure-varsproduction.tfvars -out=tofu.plan
   artifacts:
     paths:
       - tofu.plan
@@ -71,7 +71,7 @@ tofu_apply:
       podman run --rm \
         -v "${CI_PROJECT_DIR}":/workspace:z,U \
         -v "${STATE_DIR}":/workspace/.terraform:z,U \
-        -v "${SECURE_TFVARS}":/workspace/terraform.tfvars:ro \
+        -v "${SECURE_DIR}":/secure-vars:ro \
         -w /workspace \
         ${TOFU_IMAGE} apply -auto-approve tofu.plan
   artifacts:
