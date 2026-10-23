@@ -1,8 +1,0 @@
----
-- name: Deploy and Harden Production OpenBao Secret Vault
-  hosts: openbao
-  become: true
-  vars_files:
-    - group_vars/openbao.yml
-  roles:
-    - openbao_setup

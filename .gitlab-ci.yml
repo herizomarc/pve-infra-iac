@@ -1,22 +1,19 @@
-# =========================================================================
-# 🏆 ENTERPRISE GITOPS PIPELINE: SECURED ROOTLESS PODMAN INFRASTRUCTURE
-# =========================================================================
+# =============================================================
+# GITOPS PIPELINE: PURE STATELESS ROOTLESS PODMAN ORCHESTRATION
+# =============================================================
 
 stages:
   - plan
   - apply
-  - configure
 
 variables:
   TOFU_IMAGE: "ghcr.io/opentofu/opentofu:1.8.4"
-  ANSIBLE_IMAGE: "docker.io/alpine/ansible:2.21.0"
   STATE_DIR: "/var/lib/gitlab-runner/share/tofu-state"
   SECURE_TFVARS: "/var/lib/gitlab-runner/secure-vars/production.tfvars"
-  VAULT_PASS_FILE: "/var/lib/gitlab-runner/secure-vars/vault-password.txt"
-  RUNNER_SSH_KEY: "/var/lib/gitlab-runner/secure-vars/priv_key_secops"
+
 .tofu_base:
   tags:
-    - image-builder
+    - image-builder # Targeting dedicated RHEL Runner node
   before_script:
     - mkdir -p "${STATE_DIR}"
     - |
@@ -24,19 +21,20 @@ variables:
         echo "CRITICAL ERROR: Local secure variables file ${SECURE_TFVARS} missing on Runner disk!"
         exit 1
       fi
+  #Post-execution runtime remediation hook to guarantee workspace sanitization
   after_script:
-    - 'echo "=== CLEANUP: Restoring workspace files permissions ==="'
+    - 'echo "=== CLEANUP: Restoring workspace files permissions to gitlab-runner ==="'
     - 'chown -R gitlab-runner:gitlab-runner "${CI_PROJECT_DIR}"'
 
-# =========================================================================
-# 🔍 STAGE 1: OPENTOFU ORCHESTRATION PLAN
-# =========================================================================
+# ==================================================
+# STAGE 1: OPENTOFU CRYPTOGRAPHIC ORCHESTRATION PLAN
+# =================================================
 tofu_plan:
   stage: plan
   extends: .tofu_base
   script:
-    - 'echo "=== 1. INITIALIZING OPENTOFU ENVIRONMENT ==="'
-    # ➔ ROOTLESS STANDARD: Using :z,U to safely align SELinux context and User Ownership
+    - 'echo "=== 1. INITIALIZING ROOTLESS OPENTOFU ENVIRONMENT ==="'
+    # ROOTLESS STANDARD: Using :z,U to safely align SELinux context and User Ownership
     - |
       podman run --rm \
         -v "${CI_PROJECT_DIR}":/workspace:z,U \
@@ -44,30 +42,31 @@ tofu_plan:
         -w /workspace \
         ${TOFU_IMAGE} init
 
-    - 'echo "=== 2. GENERATING INFRASTRUCTURE STATE MAP ==="'
+    - 'echo "=== 2. GENERATING ZERO-TRUST INFRASTRUCTURE DELTA STATE MAP ==="'
+    # Injecting local host variables in read-only mode to prevent credential leaks into the repository schema
     - |
       podman run --rm \
         -v "${CI_PROJECT_DIR}":/workspace:z,U \
         -v "${STATE_DIR}":/workspace/.terraform:z,U \
         -v "${SECURE_TFVARS}":/workspace/terraform.tfvars:ro \
         -w /workspace \
-        ${TOFU_IMAGE} plan -out=tofu.plan
+        ${TOFU_IMAGE} plan -var-file=production.tfvars -out=tofu.plan
   artifacts:
     paths:
       - tofu.plan
       - .terraform.lock.hcl
     expire_in: 1 hour
 
-# =========================================================================
-# 🚀 STAGE 2: OPENTOFU INFRASTRUCTURE DEPLOYMENT (STATELESS)
-# =========================================================================
+# =======================================================
+# STAGE 2: OPENTOFU MATERIAL INFRASTRUCTURE PROVISIONING
+# =======================================================
 tofu_apply:
   stage: apply
   extends: .tofu_base
   dependencies:
     - tofu_plan
   script:
-    - 'echo "=== 3. EXECUTING PROXMOX INSTANCE PROVISIONING ==="'
+    - 'echo "=== 3. EXECUTING PROXMOX MATRICIAL DEPLOYMENT ==="'
     - |
       podman run --rm \
         -v "${CI_PROJECT_DIR}":/workspace:z,U \
@@ -77,58 +76,10 @@ tofu_apply:
         ${TOFU_IMAGE} apply -auto-approve tofu.plan
   artifacts:
     paths:
+      # CRITICAL GITOPS BRIDGE: Exposing the dynamically compiled network inventory map as a pipeline artifact
       - ansible-inventory/hosts.ini
-    expire_in: 1 hour
+    expire_in: 24 hour
   only:
     - main
-  when: manual
+  when: manual # Human-in-the-loop sovereign gatekeeper approval gate
 
-# =========================================================================
-# 🤖 STAGE 3: CONTAINERIZED ANSIBLE PROVISIONING (PURE ROOTLESS SOCKET)
-# =========================================================================
-ansible_configure:
-  stage: configure
-  tags:
-    - image-builder
-  dependencies:
-    - tofu_apply
-  needs:
-    - tofu_apply
-  before_script:
-    - |
-      if [ ! -f "${VAULT_PASS_FILE}" ]; then
-        echo "CRITICAL ERROR: Isolated Ansible Vault password file ${VAULT_PASS_FILE} missing on Runner disk!"
-        exit 1
-      fi
-      if [ ! -f "${RUNNER_SSH_KEY}" ]; then
-        echo "CRITICAL ERROR: Private SSH Key ${RUNNER_SSH_KEY} missing on Runner disk!"
-        exit 1
-      fi
-      if [ ! -f "ansible-inventory/hosts.ini" ]; then
-        echo "CRITICAL ERROR: Dynamic inventory hosts.ini artifact missing from OpenTofu stage!"
-        exit 1
-      fi
-  script:
-    - 'echo "=== 4. STARTING SECURE SSH AGENT AND LOADING KEY IN RAM ==="'
-    - eval $(ssh-agent -s)
-    - chmod 600 "${RUNNER_SSH_KEY}"
-    - ssh-add "${RUNNER_SSH_KEY}"
-    
-    - 'echo "=== 5. LAUNCHING CONTAINERIZED ANSIBLE CONFIGURATION VIA SOCKET ==="'
-    - |
-      podman run --rm \
-        -v "${CI_PROJECT_DIR}":/workspace:z,U \
-        -v "${VAULT_PASS_FILE}":/vault-password.txt:ro \
-        -v "${SSH_AUTH_SOCK}":/ssh-agent.sock \
-        -e SSH_AUTH_SOCK=/ssh-agent.sock \
-        -e ANSIBLE_HOST_KEY_CHECKING=False \
-        -e ANSIBLE_SSH_ARGS="-o WarnWeakCrypto=no" \
-        --security-opt label=disable \
-        -w /workspace/ansible-openbao \
-        ${ANSIBLE_IMAGE} \
-        ansible-playbook -i ../ansible-inventory/hosts.ini site.yml --vault-password-file /vault-password.txt
-  after_script:
-    - 'echo "=== CLEANUP: Restoring workspace files permissions to gitlab-runner ==="'
-    - 'chown -R gitlab-runner:gitlab-runner "${CI_PROJECT_DIR}"'
-  only:
-    - main
