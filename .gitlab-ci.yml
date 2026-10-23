@@ -43,12 +43,12 @@ tofu_plan:
         ${TOFU_IMAGE} init
 
     - 'echo "=== 2. GENERATING ZERO-TRUST INFRASTRUCTURE DELTA STATE MAP ==="'
-    # Mounting the secure directory to /secure-vars:ro instead of a single file overlay
+    # Mounting secrets as secrets.auto.tfvars so it coexists with terraform.tfvars
     - |
       podman run --rm \
         -v "${CI_PROJECT_DIR}":/workspace:z,U \
         -v "${STATE_DIR}":/workspace/.terraform:z,U \
-        -v "${SECURE_TFVARS}":/workspace/terraform.tfvars:ro \
+        -v "${SECURE_TFVARS}":/workspace/secrets.auto.tfvars:ro \
         -w /workspace \
         ${TOFU_IMAGE} plan -out=tofu.plan
   artifacts:
@@ -71,7 +71,7 @@ tofu_apply:
       podman run --rm \
         -v "${CI_PROJECT_DIR}":/workspace:z,U \
         -v "${STATE_DIR}":/workspace/.terraform:z,U \
-       -v "${SECURE_TFVARS}":/workspace/terraform.tfvars:ro \
+       -v "${SECURE_TFVARS}":/workspace/secrets.auto.tfvars:ro \
         -w /workspace \
         ${TOFU_IMAGE} apply -auto-approve tofu.plan
   artifacts:
