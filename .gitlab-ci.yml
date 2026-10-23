@@ -8,13 +8,33 @@ stages:
 
 variables:
   TOFU_IMAGE: "ghcr.io/opentofu/opentofu:1.8.4"
+  SHARED_DIR: "/var/lib/gitlab-runner/share"
   STATE_DIR: "/var/lib/gitlab-runner/share/tofu-state"
   SECURE_TFVARS: "/var/lib/gitlab-runner/secure-vars/production.tfvars"
+  
 
 .tofu_base:
   tags:
     - image-builder # Targeting dedicated RHEL Runner node
   before_script:
+    - 'echo "Initializing and cleaning up the local shared directory"'
+    # Smart directory management: Create if missing, empty if present
+    - |
+      if [ ! -d "${SHARED_DIR}" ]; then
+        echo "Shared directory does not exist. Creating it on dedicated partition..."
+        sudo mkdir -p "${SHARED_DIR}"
+        sudo chown -R gitlab-runner:gitlab-runner "${SHARED_DIR}"
+      else
+        echo "Shared directory already exists. Ensuring it is completely empty..."
+        if [ "$(ls -A ${SHARED_DIR} 2>/dev/null)" ]; then
+          echo "Stale files discovered inside the shared directory. Purging them..."
+          sudo rm -rf ${SHARED_DIR}/*
+          sudo chown -R gitlab-runner:gitlab-runner "${SHARED_DIR}"
+        else
+          echo "Shared directory is already empty."
+          sudo chown -R gitlab-runner:gitlab-runner "${SHARED_DIR}"
+        fi
+      fi
     - mkdir -p "${STATE_DIR}"
     - |
       if [ ! -f "${SECURE_TFVARS}" ]; then
