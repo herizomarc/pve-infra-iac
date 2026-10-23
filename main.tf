@@ -79,7 +79,6 @@ resource "proxmox_virtual_environment_vm" "factory_server" {
       keys     = [var.ssh_public_key] # Dynamically injected at runtime from tfvars
     }
 
-    upgrade = false # Enforcing pristine cloud-init 'done' logs to instantly release control to Ansible
   }
 }
 
