@@ -67,8 +67,6 @@ resource "proxmox_virtual_environment_vm" "factory_server" {
 
   # Cloud-Init System Level Initialization
   initialization {
-
-    type = "nocloud" # Enforcing cloud-init as the guest OS initialization boundary
     ip_config {
       ipv4 {
         address = each.value.ip_address
