@@ -51,7 +51,7 @@ tofu_plan:
         -v "${STATE_DIR}":/workspace/.terraform:z,U \
         -v "${SECURE_DIR}":/secure-vars:ro \
         -w /workspace \
-        ${TOFU_IMAGE} plan -var-file=/secure-vars/production.tfvars -out=tofu.plan
+        ${TOFU_IMAGE} plan -var-file=terraform.tfvars -var-file=/secure-vars/production.tfvars -out=tofu.plan
   artifacts:
     paths:
       - tofu.plan
