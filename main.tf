@@ -11,8 +11,8 @@ terraform {
 }
 
 provider "proxmox" {
-  endpoint  = var.proxmox_api_url
-  api_token = "${var.pve_token_id}=${var.pve_token_secret}"
+  endpoint  = var.PROXMOX_URL 
+  api_token = "${var.PROXMOX_TOKEN_ID}=${var.PROXMOX_TOKEN_SECRET}"
   insecure  = true # Bypassing self-signed internal TLS warning flags
 }
 
@@ -76,25 +76,8 @@ resource "proxmox_virtual_environment_vm" "factory_server" {
 
     user_account {
       username = var.admin_username # Injected dynamically from variables layer
-      keys     = [var.ssh_public_key] # Dynamically injected at runtime from tfvars
+      keys     = [var.SSH_PUBLIC_KEY] # Dynamically injected at runtime from tfvars
     }
 
   }
-}
-
-# =============================================================
-# AUTOMATED DINAMIC INVENTORY GENERATION FOR GITOPS PROPAGATION
-# =============================================================
-resource "local_file" "ansible_inventory" {
-  filename        = "${path.module}/ansible-inventory/hosts.ini"
-  file_permission = "0644"
-  content         = <<EOF
-[all_vms]
-%{ for key, vm in proxmox_virtual_environment_vm.factory_server ~}
-${vm.name} ansible_host=${split("/", vm.initialization[0].ip_config[0].ipv4[0].address)[0]} ansible_user=${var.admin_username}
-%{ endfor ~}
-
-[openbao]
-vm-openbao-prod-01
-EOF
 }

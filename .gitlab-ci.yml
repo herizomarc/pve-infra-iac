@@ -103,11 +103,6 @@ tofu_apply:
        -v "${SECURE_TFVARS}":/workspace/secrets.auto.tfvars:ro \
         -w /workspace \
         ${TOFU_IMAGE} apply -auto-approve tofu.plan
-  artifacts:
-    paths:
-      # CRITICAL GITOPS BRIDGE: Exposing the dynamically compiled network inventory map as a pipeline artifact
-      - ansible-inventory/hosts.ini
-    expire_in: 24 hour
   only:
     - main
   when: manual # Human-in-the-loop sovereign gatekeeper approval gate

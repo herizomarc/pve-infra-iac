@@ -1,26 +1,26 @@
 # =======================================================
 # SECURITY BOUNDARIES & ACCESS CREDENTIALS (SCHEMAS ONLY)
 # =======================================================
-variable "proxmox_api_url" {
+variable "PROXMOX_URL" {
   type        = string
   sensitive   = true
   description = "Root REST API endpoint URL for Proxmox VE cluster virtualization layer"
 }
 
-variable "pve_token_id" {
+variable "PROXMOX_TOKEN_ID" {
   type        = string
   sensitive   = true
   description = "Privileged Proxmox API Token Identifier, isolated from version control to prevent identity exposure"
 }
 
-variable "pve_token_secret" {
+variable "PROXMOX_TOKEN_SECRET" {
   type        = string
   sensitive   = true
   description = "Privileged Proxmox API Token Secret, isolated from version control to prevent identity exposure"
   
 }
 
-variable "ssh_public_key" {
+variable "SSH_PUBLIC_KEY" {
   type        = string
   sensitive   = true
   description = "SecOps public SSH key injected into the guest OS cloud-init metadata boundary at boot time (for emergency DRP access"
