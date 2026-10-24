@@ -1,0 +1,109 @@
+# =============================================================
+# GITOPS PIPELINE: PURE STATELESS ROOTLESS PODMAN ORCHESTRATION
+# =============================================================
+
+stages:
+  - plan
+  - apply
+
+variables:
+  TOFU_IMAGE: "ghcr.io/opentofu/opentofu:1.8.4"
+  SHARED_DIR: "/var/lib/gitlab-runner/share"
+  STATE_DIR: "/var/lib/gitlab-runner/share/tofu-state"
+  SECURE_TFVARS: "/var/lib/gitlab-runner/secure-vars/production.tfvars"
+  
+
+.tofu_base:
+  tags:
+    - image-builder # Targeting dedicated RHEL Runner node
+  before_script:
+    - 'echo "Initializing and cleaning up the local shared directory"'
+    # Smart directory management: Create if missing, empty if present
+    - |
+      if [ ! -d "${SHARED_DIR}" ]; then
+        echo "Shared directory does not exist. Creating it on dedicated partition..."
+        sudo mkdir -p "${SHARED_DIR}"
+        sudo chown -R gitlab-runner:gitlab-runner "${SHARED_DIR}"
+      else
+        echo "Shared directory already exists. Ensuring it is completely empty..."
+        if [ "$(ls -A ${SHARED_DIR} 2>/dev/null)" ]; then
+          echo "Stale files discovered inside the shared directory. Purging them..."
+          sudo rm -rf ${SHARED_DIR}/*
+          sudo chown -R gitlab-runner:gitlab-runner "${SHARED_DIR}"
+        else
+          echo "Shared directory is already empty."
+          sudo chown -R gitlab-runner:gitlab-runner "${SHARED_DIR}"
+        fi
+      fi
+    - mkdir -p "${STATE_DIR}"
+    - |
+      if [ ! -f "${SECURE_TFVARS}" ]; then
+        echo "CRITICAL ERROR: Local secure variables file ${SECURE_TFVARS} missing on Runner disk!"
+        exit 1
+      fi
+  # Post-execution runtime remediation hook to guarantee workspace sanitization
+  after_script:
+    - 'echo "=== CLEANUP: Restoring workspace files permissions to gitlab-runner ==="'
+    - 'chown -R gitlab-runner:gitlab-runner "${CI_PROJECT_DIR}"'
+
+# ==================================================
+# STAGE 1: OPENTOFU CRYPTOGRAPHIC ORCHESTRATION PLAN
+# =================================================
+tofu_plan:
+  stage: plan
+  extends: .tofu_base
+  script:
+    - 'echo "=== 1. INITIALIZING ROOTLESS OPENTOFU ENVIRONMENT ==="'
+    # ROOTLESS STANDARD: Using :z,U to safely align SELinux context and User Ownership
+    - |
+      podman run --rm \
+        -v "${CI_PROJECT_DIR}":/workspace:z,U \
+        -v "${STATE_DIR}":/workspace/.terraform:z,U \
+        -w /workspace \
+        ${TOFU_IMAGE} init
+
+    - 'echo "=== 2. GENERATING ZERO-TRUST INFRASTRUCTURE DELTA STATE MAP ==="'
+    # Mounting secrets as secrets.auto.tfvars so it coexists with terraform.tfvars
+    - |
+      podman run --rm \
+        -v "${CI_PROJECT_DIR}":/workspace:z,U \
+        -v "${STATE_DIR}":/workspace/.terraform:z,U \
+        -v "${SECURE_TFVARS}":/workspace/secrets.auto.tfvars:ro \
+        -w /workspace \
+        ${TOFU_IMAGE} plan -out=tofu.plan
+  artifacts:
+    paths:
+      - tofu.plan
+      - .terraform.lock.hcl
+    expire_in: 1 hour
+
+# =======================================================
+# STAGE 2: OPENTOFU MATERIAL INFRASTRUCTURE PROVISIONING
+# =======================================================
+tofu_apply:
+  stage: apply
+  extends: .tofu_base
+  dependencies:
+    - tofu_plan
+  script:
+    - 'echo "=== 3. RE-INITIALIZING IN-MEMORY PROVIDER PLUGINS ==="'
+    #  Re-run init to force fresh local provider downloads if cache maps are opaque
+    - |
+      podman run --rm \
+        -v "${CI_PROJECT_DIR}":/workspace:z,U \
+        -v "${STATE_DIR}":/workspace/.terraform:z,U \
+        -w /workspace \
+        ${TOFU_IMAGE} init
+
+    - 'echo "=== 4. EXECUTING PROXMOX MATRICIAL DEPLOYMENT ==="'
+    - |
+      podman run --rm \
+        -v "${CI_PROJECT_DIR}":/workspace:z,U \
+        -v "${STATE_DIR}":/workspace/.terraform:z,U \
+       -v "${SECURE_TFVARS}":/workspace/secrets.auto.tfvars:ro \
+        -w /workspace \
+        ${TOFU_IMAGE} apply -auto-approve tofu.plan
+  only:
+    - main
+  when: manual # Human-in-the-loop sovereign gatekeeper approval gate
+
