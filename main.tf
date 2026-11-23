@@ -41,6 +41,7 @@ resource "proxmox_virtual_environment_vm" "factory_server" {
   name        = "vm-${each.key}-01"
   description = each.value.description
   vm_id       = each.value.vm_id
+  keyboard_layout = "fr"
   node_name   = var.pve_node_name # Injected dynamically from variables layer
 
   # Link to hardened  RHEL 9 Golden Image Template (ID 9000)
