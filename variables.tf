@@ -65,21 +65,27 @@ variable "golden_image_id" {
   description = "The immutable source template VM ID utilized for linked cloning routines."
 }
 
-# ================================================
-# MATRICIAL SCHEMA WITH DYNAMIC MULTI-DISK SUPPORT
-# ================================================
-variable "virtual_machines" {
+# ============================================================
+# MATRICIAL SCHEMA WITH DYNAMIC MULTI-DISK AND NETWORK SUPPORT
+# ============================================================
+
+ variable "virtual_machines" {
   type = map(object({
-    vm_id        = number
-    cpu_cores    = number
-    memory_mb    = number
-    ip_address   = string
-    description  = string
-    #Matrix for variable multi-disk allocation schema
+    vm_id       = number
+    cpu_cores   = number
+    memory_mb   = number
+    ip_address  = optional(string)
+    description = string
     storage_disks = list(object({
       interface = string
       size_gb   = number
     }))
+    networks = optional(list(object({
+      bridge     = string
+      vlan_id    = optional(number)
+      ip_address = string
+      gateway    = optional(string)
+    })))
   }))
-  description = "The corporate scalable infrastructure topology map supporting variable disk structures."
+  description = "The corporate scalable infrastructure topology map supporting variable disk and network structures."
 }

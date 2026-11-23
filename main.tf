@@ -16,6 +16,19 @@ provider "proxmox" {
   insecure  = true # Bypassing self-signed internal TLS warning flags
 }
 
+locals {
+  vm_networks = {
+    for k, v in var.virtual_machines : k => v.networks != null ? v.networks : [
+      {
+        bridge     = var.network_bridge
+        vlan_id    = null
+        ip_address = v.ip_address
+        gateway    = var.network_gateway
+      }
+    ]
+  }
+}
+
 
 # ==========================================================
 # IAAS COMPUTE PROVISIONING LAYER (FOR_EACH DECOUPLING LOOP)
@@ -60,24 +73,34 @@ resource "proxmox_virtual_environment_vm" "factory_server" {
   }
 
   # Network Device Mapping
-  network_device {
-    bridge = var.network_bridge # Injected dynamically from variables layer
-    model  = "virtio"
+  dynamic "network_device" {
+    for_each = local.vm_networks[each.key]
+    content {
+      bridge  = network_device.value.bridge
+      vlan_id = network_device.value.vlan_id
+      model   = "virtio"
+    }
   }
 
   # Cloud-Init System Level Initialization
   initialization {
-    ip_config {
-      ipv4 {
-        address = each.value.ip_address
-        gateway = var.network_gateway # Injected dynamically from variables layer
+    dns {
+      servers = ["10.10.99.11"]
+    }
+
+    dynamic "ip_config" {
+      for_each = local.vm_networks[each.key]
+      content {
+        ipv4 {
+          address = ip_config.value.ip_address
+          gateway = ip_config.value.gateway
+        }
       }
     }
 
     user_account {
-      username = var.admin_username # Injected dynamically from variables layer
-      keys     = [var.SSH_PUBLIC_KEY] # Dynamically injected at runtime from tfvars
+      username = var.admin_username
+      keys     = [var.SSH_PUBLIC_KEY]
     }
-
   }
 }
