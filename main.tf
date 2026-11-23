@@ -105,6 +105,16 @@ resource "proxmox_virtual_environment_vm" "factory_server" {
       keys     = [var.SSH_PUBLIC_KEY]
     }
   }
+  lifecycle {
+    ignore_changes = [
+      clone,
+      disk,
+      initialization,
+      network_device,
+      operating_system,
+      vga,
+    ]
+  }
 }
 
 # ==========================================================
