@@ -2,6 +2,8 @@
 # PROVIDER REQUIREMENT BOUNDARIES
 # ===============================
 terraform {
+
+  backend "http" {}
   required_providers {
     proxmox = {
       source  = "bpg/proxmox"
@@ -103,4 +105,12 @@ resource "proxmox_virtual_environment_vm" "factory_server" {
       keys     = [var.SSH_PUBLIC_KEY]
     }
   }
+}
+
+# ==========================================================
+# STATE IMPORT: ATTACH OPENBAO TO STATE (ID 102)
+# ==========================================================
+import {
+  to = proxmox_virtual_environment_vm.factory_server["openbao-prod"]
+  id = "pve1/102"
 }

@@ -11,14 +11,13 @@ variables:
   SHARED_DIR: "/var/lib/gitlab-runner/share"
   STATE_DIR: "/var/lib/gitlab-runner/share/tofu-state"
   SECURE_TFVARS: "/var/lib/gitlab-runner/secure-vars/production.tfvars"
-  
+  TF_STATE_NAME: "production"
 
 .tofu_base:
   tags:
     - image-builder # Targeting dedicated RHEL Runner node
   before_script:
     - 'echo "Initializing and cleaning up the local shared directory"'
-    # Smart directory management: Create if missing, empty if present
     - |
       if [ ! -d "${SHARED_DIR}" ]; then
         echo "Shared directory does not exist. Creating it on dedicated partition..."
@@ -41,7 +40,6 @@ variables:
         echo "CRITICAL ERROR: Local secure variables file ${SECURE_TFVARS} missing on Runner disk!"
         exit 1
       fi
-  # Post-execution runtime remediation hook to guarantee workspace sanitization
   after_script:
     - 'echo "=== CLEANUP: Restoring workspace files permissions to gitlab-runner ==="'
     - 'chown -R gitlab-runner:gitlab-runner "${CI_PROJECT_DIR}"'
@@ -53,17 +51,23 @@ tofu_plan:
   stage: plan
   extends: .tofu_base
   script:
-    - 'echo "=== 1. INITIALIZING ROOTLESS OPENTOFU ENVIRONMENT ==="'
-    # ROOTLESS STANDARD: Using :z,U to safely align SELinux context and User Ownership
+    - 'echo "=== 1. INITIALIZING ROOTLESS OPENTOFU ENVIRONMENT WITH GITLAB HTTP STATE ==="'
     - |
       podman run --rm \
         -v "${CI_PROJECT_DIR}":/workspace:z,U \
         -v "${STATE_DIR}":/workspace/.terraform:z,U \
         -w /workspace \
-        ${TOFU_IMAGE} init
+        ${TOFU_IMAGE} init \
+          -backend-config="address=${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/${TF_STATE_NAME}" \
+          -backend-config="lock_address=${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/${TF_STATE_NAME}/lock" \
+          -backend-config="unlock_address=${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/${TF_STATE_NAME}/lock" \
+          -backend-config="username=gitlab-ci-token" \
+          -backend-config="password=${CI_JOB_TOKEN}" \
+          -backend-config="lock_method=POST" \
+          -backend-config="unlock_method=DELETE" \
+          -backend-config="retry_wait_min=5"
 
     - 'echo "=== 2. GENERATING ZERO-TRUST INFRASTRUCTURE DELTA STATE MAP ==="'
-    # Mounting secrets as secrets.auto.tfvars so it coexists with terraform.tfvars
     - |
       podman run --rm \
         -v "${CI_PROJECT_DIR}":/workspace:z,U \
@@ -86,24 +90,30 @@ tofu_apply:
   dependencies:
     - tofu_plan
   script:
-    - 'echo "=== 3. RE-INITIALIZING IN-MEMORY PROVIDER PLUGINS ==="'
-    #  Re-run init to force fresh local provider downloads if cache maps are opaque
+    - 'echo "=== 3. RE-INITIALIZING IN-MEMORY PROVIDER PLUGINS & REMOTE STATE ==="'
     - |
       podman run --rm \
         -v "${CI_PROJECT_DIR}":/workspace:z,U \
         -v "${STATE_DIR}":/workspace/.terraform:z,U \
         -w /workspace \
-        ${TOFU_IMAGE} init
+        ${TOFU_IMAGE} init \
+          -backend-config="address=${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/${TF_STATE_NAME}" \
+          -backend-config="lock_address=${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/${TF_STATE_NAME}/lock" \
+          -backend-config="unlock_address=${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/${TF_STATE_NAME}/lock" \
+          -backend-config="username=gitlab-ci-token" \
+          -backend-config="password=${CI_JOB_TOKEN}" \
+          -backend-config="lock_method=POST" \
+          -backend-config="unlock_method=DELETE" \
+          -backend-config="retry_wait_min=5"
 
     - 'echo "=== 4. EXECUTING PROXMOX MATRICIAL DEPLOYMENT ==="'
     - |
       podman run --rm \
         -v "${CI_PROJECT_DIR}":/workspace:z,U \
         -v "${STATE_DIR}":/workspace/.terraform:z,U \
-       -v "${SECURE_TFVARS}":/workspace/secrets.auto.tfvars:ro \
+        -v "${SECURE_TFVARS}":/workspace/secrets.auto.tfvars:ro \
         -w /workspace \
         ${TOFU_IMAGE} apply -auto-approve tofu.plan
   only:
     - main
-  when: manual # Human-in-the-loop sovereign gatekeeper approval gate
-
+  when: manual
