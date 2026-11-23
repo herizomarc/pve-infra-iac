@@ -93,6 +93,8 @@ tofu_apply:
     - 'echo "=== 3. RE-INITIALIZING IN-MEMORY PROVIDER PLUGINS & REMOTE STATE ==="'
     - |
       podman run --rm \
+        -e TF_HTTP_USERNAME="gitlab-ci-token" \
+        -e TF_HTTP_PASSWORD="${CI_JOB_TOKEN}" \
         -v "${CI_PROJECT_DIR}":/workspace:z,U \
         -v "${STATE_DIR}":/workspace/.terraform:z,U \
         -w /workspace \
@@ -109,6 +111,8 @@ tofu_apply:
     - 'echo "=== 4. EXECUTING PROXMOX MATRICIAL DEPLOYMENT ==="'
     - |
       podman run --rm \
+        -e TF_HTTP_USERNAME="gitlab-ci-token" \
+        -e TF_HTTP_PASSWORD="${CI_JOB_TOKEN}" \
         -v "${CI_PROJECT_DIR}":/workspace:z,U \
         -v "${STATE_DIR}":/workspace/.terraform:z,U \
         -v "${SECURE_TFVARS}":/workspace/secrets.auto.tfvars:ro \
