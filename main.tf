@@ -118,10 +118,3 @@ resource "proxmox_virtual_environment_vm" "factory_server" {
   }
 }
 
-# ==========================================================
-# STATE IMPORT: ATTACH OPENBAO TO STATE (ID 102)
-# ==========================================================
-import {
-  to = proxmox_virtual_environment_vm.factory_server["openbao-prod"]
-  id = "pve1/102"
-}
